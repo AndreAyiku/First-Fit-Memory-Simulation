@@ -13,20 +13,28 @@ public class MemorySimulatorGUI extends JFrame {
     public JLabel waitingLabel;
     public JLabel doneLabel;
     public JLabel rejectedLabel;
-    public JButton startButton;
+    public JLabel algorithmLabel;  // New label to show current algorithm
+    public JButton startFirstFitButton;  // Renamed and updated
+    public JButton startBestFitButton;   // New button for best-fit
     public JButton pauseButton;
     public JButton stepButton;
     public Timer timer;
     public ArrayList<BlockPanel> blockPanels;
-    public MemorySimulator sim;
+    public MemorySimulator firstFitSim;      // First-fit simulator
+    public BestFitMemorySimulator bestFitSim; // Best-fit simulator
+    public Object currentSim;  // Reference to currently active simulator
+    public String currentAlgorithm;  // Track which algorithm is running
     
   
     public MemorySimulatorGUI() {
-        sim = new MemorySimulator();
+        firstFitSim = new MemorySimulator();
+        bestFitSim = new BestFitMemorySimulator();
+        currentSim = null;
+        currentAlgorithm = "None";
         blockPanels = new ArrayList<>();
         
         // Window settings
-        setTitle("Memory First Fit Simulator");
+        setTitle("Memory Allocation Simulator - First-Fit vs Best-Fit");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
         
@@ -46,11 +54,12 @@ public class MemorySimulatorGUI extends JFrame {
         // Make timer (2 seconds per tick)
         timer = new Timer(2000, e -> {
             step();
-            if (sim.isDone()) {
+            if (isCurrentSimDone()) {
                 timer.stop();
-                startButton.setEnabled(true);
+                startFirstFitButton.setEnabled(true);
+                startBestFitButton.setEnabled(true);
                 pauseButton.setEnabled(false);
-                logArea.append("\n=== DONE ===\n");
+                logArea.append("\n=== SIMULATION COMPLETE ===\n");
                 showStats();
             }
         });
@@ -66,9 +75,11 @@ public class MemorySimulatorGUI extends JFrame {
         leftPanel = new JPanel();
         leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
         leftPanel.setBorder(BorderFactory.createTitledBorder("Controls"));
-        leftPanel.setPreferredSize(new Dimension(200, 400));
+        leftPanel.setPreferredSize(new Dimension(220, 400));
         
         // Create labels
+        algorithmLabel = new JLabel("Algorithm: None");
+        algorithmLabel.setFont(new Font("SansSerif", Font.BOLD, 12));
         timeLabel = new JLabel("Time: 0");
         runningLabel = new JLabel("Running: 0");
         waitingLabel = new JLabel("Waiting: 0");
@@ -76,7 +87,8 @@ public class MemorySimulatorGUI extends JFrame {
         rejectedLabel = new JLabel("Rejected: 0");
         
         // Create buttons
-        startButton = new JButton("Start");
+        startFirstFitButton = new JButton("Start First-Fit");
+        startBestFitButton = new JButton("Start Best-Fit");
         pauseButton = new JButton("Pause");
         stepButton = new JButton("Step");
         pauseButton.setEnabled(false);
@@ -84,11 +96,14 @@ public class MemorySimulatorGUI extends JFrame {
     
         
         // Button actions
-        startButton.addActionListener(e -> start());
+        startFirstFitButton.addActionListener(e -> startFirstFit());
+        startBestFitButton.addActionListener(e -> startBestFit());
         pauseButton.addActionListener(e -> pause());
         stepButton.addActionListener(e -> step());
         
         // Add everything
+        leftPanel.add(Box.createVerticalStrut(10));
+        leftPanel.add(algorithmLabel);
         leftPanel.add(Box.createVerticalStrut(10));
         leftPanel.add(timeLabel);
         leftPanel.add(Box.createVerticalStrut(5));
@@ -100,7 +115,9 @@ public class MemorySimulatorGUI extends JFrame {
         leftPanel.add(Box.createVerticalStrut(5));
         leftPanel.add(rejectedLabel);
         leftPanel.add(Box.createVerticalStrut(20));
-        leftPanel.add(startButton);
+        leftPanel.add(startFirstFitButton);
+        leftPanel.add(Box.createVerticalStrut(5));
+        leftPanel.add(startBestFitButton);
         leftPanel.add(Box.createVerticalStrut(5));
         leftPanel.add(pauseButton);
         leftPanel.add(Box.createVerticalStrut(5));
@@ -142,45 +159,147 @@ public class MemorySimulatorGUI extends JFrame {
         }
     }
     
-    // Start button clicked
-    public void start() {
-        if (!sim.isStarted()) {
-            sim.setup();
-            logArea.append("Simulation Started\n");
-            logArea.append("==================\n");
+    // Start First-Fit simulation
+    public void startFirstFit() {
+        // Reset simulation if needed
+        if (currentSim != null) {
+            resetSimulation();
         }
+        
+        currentSim = firstFitSim;
+        currentAlgorithm = "First-Fit";
+        algorithmLabel.setText("Algorithm: First-Fit");
+        
+        if (!firstFitSim.isStarted()) {
+            firstFitSim.setup();
+            logArea.append("=== FIRST-FIT SIMULATION STARTED ===\n");
+            logArea.append("=====================================\n");
+        }
+        
+        startSimulation();
+    }
+    
+    // Start Best-Fit simulation
+    public void startBestFit() {
+        // Reset simulation if needed
+        if (currentSim != null) {
+            resetSimulation();
+        }
+        
+        currentSim = bestFitSim;
+        currentAlgorithm = "Best-Fit";
+        algorithmLabel.setText("Algorithm: Best-Fit");
+        
+        if (!bestFitSim.isStarted()) {
+            bestFitSim.setup();
+            logArea.append("=== BEST-FIT SIMULATION STARTED ===\n");
+            logArea.append("====================================\n");
+        }
+        
+        startSimulation();
+    }
+    
+    // Common start logic
+    private void startSimulation() {
         timer.start();
-        startButton.setEnabled(false);
+        startFirstFitButton.setEnabled(false);
+        startBestFitButton.setEnabled(false);
         pauseButton.setEnabled(true);
         stepButton.setEnabled(true);
+    }
+    
+    // Reset simulation state
+    private void resetSimulation() {
+        timer.stop();
+        firstFitSim = new MemorySimulator();
+        bestFitSim = new BestFitMemorySimulator();
+        logArea.setText("");
+        
+        // Clear visual blocks
+        for (BlockPanel panel : blockPanels) {
+            panel.clearJob();
+        }
+        
+        updateDisplay();
     }
     
     // Pause button clicked
     public void pause() {
         timer.stop();
-        startButton.setEnabled(true);
+        startFirstFitButton.setEnabled(true);
+        startBestFitButton.setEnabled(true);
         pauseButton.setEnabled(false);
     }
     
     // Step button clicked (or timer tick)
     public void step() {
-        String log = sim.runOneTick();
+        if (currentSim == null) return;
+        
+        String log = "";
+        if (currentSim instanceof MemorySimulator) {
+            log = ((MemorySimulator) currentSim).runOneTick();
+        } else if (currentSim instanceof BestFitMemorySimulator) {
+            log = ((BestFitMemorySimulator) currentSim).runOneTick();
+        }
+        
         logArea.append(log);
         updateDisplay();
         logArea.setCaretPosition(logArea.getDocument().getLength());
     }
     
+    // Check if current simulation is done
+    private boolean isCurrentSimDone() {
+        if (currentSim == null) return true;
+        
+        if (currentSim instanceof MemorySimulator) {
+            return ((MemorySimulator) currentSim).isDone();
+        } else if (currentSim instanceof BestFitMemorySimulator) {
+            return ((BestFitMemorySimulator) currentSim).isDone();
+        }
+        return true;
+    }
+    
     // Update all displays
     public void updateDisplay() {
-        // Update labels
-        timeLabel.setText("Time: " + sim.getTime());
-        runningLabel.setText("Running: " + sim.getRunningCount());
-        waitingLabel.setText("Waiting: " + sim.getWaitingCount());
-        doneLabel.setText("Done: " + sim.getDoneCount());
-        rejectedLabel.setText("Rejected: " + sim.getRejectedCount());
+        if (currentSim == null) {
+            timeLabel.setText("Time: 0");
+            runningLabel.setText("Running: 0");
+            waitingLabel.setText("Waiting: 0");
+            doneLabel.setText("Done: 0");
+            rejectedLabel.setText("Rejected: 0");
+            return;
+        }
         
-        // Update blocks
-        ArrayList<MemoryBlock> blocks = sim.getBlocks();
+        // Update labels based on current simulator
+        if (currentSim instanceof MemorySimulator) {
+            MemorySimulator sim = (MemorySimulator) currentSim;
+            timeLabel.setText("Time: " + sim.getTime());
+            runningLabel.setText("Running: " + sim.getRunningCount());
+            waitingLabel.setText("Waiting: " + sim.getWaitingCount());
+            doneLabel.setText("Done: " + sim.getDoneCount());
+            rejectedLabel.setText("Rejected: " + sim.getRejectedCount());
+            
+            // Update blocks
+            ArrayList<MemoryBlock> blocks = sim.getBlocks();
+            updateBlockPanels(blocks);
+        } else if (currentSim instanceof BestFitMemorySimulator) {
+            BestFitMemorySimulator sim = (BestFitMemorySimulator) currentSim;
+            timeLabel.setText("Time: " + sim.getTime());
+            runningLabel.setText("Running: " + sim.getRunningCount());
+            waitingLabel.setText("Waiting: " + sim.getWaitingCount());
+            doneLabel.setText("Done: " + sim.getDoneCount());
+            rejectedLabel.setText("Rejected: " + sim.getRejectedCount());
+            
+            // Update blocks
+            ArrayList<MemoryBlock> blocks = sim.getBlocks();
+            updateBlockPanels(blocks);
+        }
+        
+        repaint();
+    }
+    
+    // Helper method to update block panels
+    private void updateBlockPanels(ArrayList<MemoryBlock> blocks) {
         for (int i = 0; i < blocks.size() && i < blockPanels.size(); i++) {
             MemoryBlock block = blocks.get(i);
             BlockPanel panel = blockPanels.get(i);
@@ -191,16 +310,26 @@ public class MemorySimulatorGUI extends JFrame {
                 panel.clearJob();
             }
         }
-        
-        repaint();
     }
     
     // Show final stats
     public void showStats() {
-        String stats = "\n=== FINAL STATS ===\n";
-        stats += "Processed: " + sim.getDoneCount() + "\n";
-        stats += "Rejected: " + sim.getRejectedCount() + "\n";
-        stats += "Time: " + sim.getTime() + "\n";
+        String stats = "\n=== FINAL STATISTICS ===\n";
+        stats += "Algorithm Used: " + currentAlgorithm + "\n";
+        
+        if (currentSim instanceof MemorySimulator) {
+            MemorySimulator sim = (MemorySimulator) currentSim;
+            stats += "Jobs Completed: " + sim.getDoneCount() + "\n";
+            stats += "Jobs Rejected: " + sim.getRejectedCount() + "\n";
+            stats += "Total Time: " + sim.getTime() + " ticks\n";
+        } else if (currentSim instanceof BestFitMemorySimulator) {
+            BestFitMemorySimulator sim = (BestFitMemorySimulator) currentSim;
+            stats += "Jobs Completed: " + sim.getDoneCount() + "\n";
+            stats += "Jobs Rejected: " + sim.getRejectedCount() + "\n";
+            stats += "Total Time: " + sim.getTime() + " ticks\n";
+        }
+        
+        stats += "========================\n";
         logArea.append(stats);
     }
     
