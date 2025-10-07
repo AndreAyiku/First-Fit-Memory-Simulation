@@ -6,6 +6,8 @@ public class Job {
     public String status;           // "WAITING", "RUNNING", or "DONE"
     public int blockNumber;         
     public int startTime;           //when job started running
+    public int arrivalTime;         // when job arrived to the system
+    public int waitTime;            // time spent in waiting queue before start
     
     //Constrsuctor for a new job
     public Job(int jobNum, int time, int memory) {
@@ -16,6 +18,8 @@ public class Job {
         this.status = "WAITING";
         this.blockNumber = -1;
         this.startTime = -1;
+        this.arrivalTime = -1;
+        this.waitTime = 0;
     }
     public void tick() {  //tick is a time unit
         if (status.equals("RUNNING") && timeLeft > 0) { //checks if the job status is running and the time left is greater than 0
@@ -29,6 +33,9 @@ public class Job {
         this.status = "RUNNING";
         this.startTime = currentTime;
         this.blockNumber = block;
+        if (arrivalTime >= 0) {
+            this.waitTime = currentTime - arrivalTime;
+        }
     }
     public void finish() {
         this.status = "DONE";
