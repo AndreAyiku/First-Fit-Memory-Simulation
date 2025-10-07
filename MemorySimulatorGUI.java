@@ -13,9 +13,9 @@ public class MemorySimulatorGUI extends JFrame {
     public JLabel waitingLabel;
     public JLabel doneLabel;
     public JLabel rejectedLabel;
-    public JLabel algorithmLabel;  // New label to show current algorithm
-    public JButton startFirstFitButton;  // Renamed and updated
-    public JButton startBestFitButton;   // New button for best-fit
+    public JLabel algorithmLabel;  
+    public JButton startFirstFitButton;  
+    public JButton startBestFitButton;   
     public JButton pauseButton;
     public JButton stepButton;
     public Timer timer;
