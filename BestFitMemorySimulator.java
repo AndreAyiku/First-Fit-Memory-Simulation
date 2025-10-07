@@ -13,6 +13,15 @@ public class BestFitMemorySimulator {
     public int nextJobNumber;
     public int largestBlock;
     public boolean started;
+    // Metrics (same as MemorySimulator(which implements First-Fit))
+    public long queueLengthSum;
+    public int queueLengthMax;
+    public int queueLengthSamples;
+    public long totalWaitTime;
+    public int jobsStartedCount;
+    public long internalFragSumBytes;
+    public long internalFragDenomBytes;
+    public int internalFragSamples;
     
     public int[][] allJobs = { //All job data [jobNumber, time, size] - will be sorted by size
         {1, 5, 5760}, {2, 4, 4190}, {3, 8, 3290}, {4, 2, 2030}, {5, 2, 2550},
@@ -37,6 +46,14 @@ public class BestFitMemorySimulator {
         nextJobNumber = 0;
         largestBlock = 0;
         started = false;
+        queueLengthSum = 0;
+        queueLengthMax = 0;
+        queueLengthSamples = 0;
+        totalWaitTime = 0;
+        jobsStartedCount = 0;
+        internalFragSumBytes = 0;
+        internalFragDenomBytes = 0;
+        internalFragSamples = 0;
     }
     
     // Set up the simulation
@@ -76,6 +93,7 @@ public class BestFitMemorySimulator {
             int jobTime = allJobs[nextJobNumber][1];
             int jobSize = allJobs[nextJobNumber][2];
             Job newJob = new Job(jobNum, jobTime, jobSize);
+            newJob.arrivalTime = currentTime;
             
             log += "Job " + jobNum + " arrives (Size: " + jobSize + ", Time: " + jobTime + ")\n";
             
@@ -96,6 +114,7 @@ public class BestFitMemorySimulator {
                 // Save job reference before processing
                 Job job = block.currentJob;
                 job.tick();
+                block.timeUsedTicks++;
                 
                 // Check if job finished
                 if (job.isDone()) {
@@ -109,6 +128,10 @@ public class BestFitMemorySimulator {
         }
         
         // Step 3: Try to load waiting jobs using BEST-FIT algorithm
+        // record queue length snapshot before allocation
+        queueLengthSum += waitingJobs.size();
+        queueLengthSamples++;
+        if (waitingJobs.size() > queueLengthMax) queueLengthMax = waitingJobs.size();
         ArrayList<Job> jobsToRemove = new ArrayList<>();
         for (int i = 0; i < waitingJobs.size(); i++) {
             Job job = waitingJobs.get(i);
@@ -134,6 +157,8 @@ public class BestFitMemorySimulator {
                 bestBlock.loadJob(job, currentTime);
                 runningJobs.add(job);
                 jobsToRemove.add(job);
+                totalWaitTime += job.waitTime;
+                jobsStartedCount++;
                 
                 int wasted = bestBlock.getWastedSpace();
                 double percent = (wasted * 100.0) / bestBlock.blockSize;
@@ -151,6 +176,22 @@ public class BestFitMemorySimulator {
         // Remove jobs that were loaded
         for (int i = 0; i < jobsToRemove.size(); i++) {
             waitingJobs.remove(jobsToRemove.get(i));
+        }
+        
+        // Step 4: Measure internal fragmentation for this tick
+        long wastedThisTick = 0;
+        long occupiedCapacityThisTick = 0;
+        for (int i = 0; i < memoryBlocks.size(); i++) {
+            MemoryBlock block = memoryBlocks.get(i);
+            if (!block.isEmpty && block.currentJob != null) {
+                wastedThisTick += block.getWastedSpace();
+                occupiedCapacityThisTick += block.blockSize;
+            }
+        }
+        if (occupiedCapacityThisTick > 0) {
+            internalFragSumBytes += wastedThisTick;
+            internalFragDenomBytes += occupiedCapacityThisTick;
+            internalFragSamples++;
         }
         
         currentTime++;
@@ -173,4 +214,50 @@ public class BestFitMemorySimulator {
     public int getDoneCount() { return doneJobs.size(); }
     public int getRejectedCount() { return rejectedJobs.size(); }
     public ArrayList<MemoryBlock> getBlocks() { return memoryBlocks; }
+
+    // Extended statistics string
+    public String getStats() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Jobs Completed: ").append(getDoneCount()).append("\n");
+        sb.append("Jobs Rejected: ").append(getRejectedCount()).append("\n");
+        sb.append("Total Time: ").append(getTime()).append(" ticks\n");
+        double throughput = getTime() > 0 ? (getDoneCount() * 1.0) / getTime() : 0.0;
+        sb.append(String.format("Throughput: %.3f jobs/tick\n", throughput));
+
+        double avgQueueLen = queueLengthSamples > 0 ? (queueLengthSum * 1.0) / queueLengthSamples : 0.0;
+        sb.append(String.format("Avg waiting queue length: %.2f (max %d)\n", avgQueueLen, queueLengthMax));
+
+        double avgWaitTime = jobsStartedCount > 0 ? (totalWaitTime * 1.0) / jobsStartedCount : 0.0;
+        sb.append(String.format("Avg waiting time in queue: %.2f ticks\n", avgWaitTime));
+
+        // Internal fragmentation
+        double avgWastedBytes = internalFragSamples > 0 ? (internalFragSumBytes * 1.0) / internalFragSamples : 0.0;
+        double avgFragPct = (internalFragDenomBytes > 0) ? (internalFragSumBytes * 100.0) / internalFragDenomBytes : 0.0;
+        sb.append(String.format("Avg internal fragmentation: %.0f bytes (%.2f%%) per active tick\n", avgWastedBytes, avgFragPct));
+
+        // Storage utilization by time usage
+        int blocks = memoryBlocks.size();
+        int neverUsed = 0, lightUsed = 0, moderateUsed = 0, heavyUsed = 0;
+        long totalUsedTicks = 0;
+        for (int i = 0; i < blocks; i++) {
+            MemoryBlock b = memoryBlocks.get(i);
+            totalUsedTicks += b.timeUsedTicks;
+            if (b.timesAssigned == 0) {
+                neverUsed++;
+            }
+            double timeFrac = getTime() > 0 ? (b.timeUsedTicks * 1.0) / getTime() : 0.0;
+            if (timeFrac >= 0.8) heavyUsed++;
+            else if (timeFrac >= 0.2) moderateUsed++;
+            else if (timeFrac > 0.0) lightUsed++;
+        }
+        double overallUtilPct = (getTime() > 0 && blocks > 0) ? (totalUsedTicks * 100.0) / (getTime() * blocks) : 0.0;
+        sb.append(String.format("Avg block time utilization: %.2f%%\n", overallUtilPct));
+        if (blocks > 0) {
+            sb.append(String.format("Partitions never used: %.1f%% (%d/%d)\n", neverUsed * 100.0 / blocks, neverUsed, blocks));
+            sb.append(String.format("Partitions lightly used (<20%% time): %.1f%% (%d/%d)\n", lightUsed * 100.0 / blocks, lightUsed, blocks));
+            sb.append(String.format("Partitions moderately used (20-80%% time): %.1f%% (%d/%d)\n", moderateUsed * 100.0 / blocks, moderateUsed, blocks));
+            sb.append(String.format("Partitions heavily used (>=80%% time): %.1f%% (%d/%d)\n", heavyUsed * 100.0 / blocks, heavyUsed, blocks));
+        }
+        return sb.toString();
+    }
 }
