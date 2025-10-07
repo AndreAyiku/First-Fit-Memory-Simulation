@@ -319,14 +319,10 @@ public class MemorySimulatorGUI extends JFrame {
         
         if (currentSim instanceof MemorySimulator) {
             MemorySimulator sim = (MemorySimulator) currentSim;
-            stats += "Jobs Completed: " + sim.getDoneCount() + "\n";
-            stats += "Jobs Rejected: " + sim.getRejectedCount() + "\n";
-            stats += "Total Time: " + sim.getTime() + " ticks\n";
+            stats += sim.getStats();
         } else if (currentSim instanceof BestFitMemorySimulator) {
             BestFitMemorySimulator sim = (BestFitMemorySimulator) currentSim;
-            stats += "Jobs Completed: " + sim.getDoneCount() + "\n";
-            stats += "Jobs Rejected: " + sim.getRejectedCount() + "\n";
-            stats += "Total Time: " + sim.getTime() + " ticks\n";
+            stats += sim.getStats();
         }
         
         stats += "========================\n";
